@@ -1,0 +1,111 @@
+name: Greeter Bot
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  greet-issue:
+    name: Comment on new issue
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post issue welcome comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isFirstTime = await (async () => {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                creator: context.payload.issue.user.login,
+                state: 'all',
+              });
+              return issues.length <= 1; // this issue is already in the list
+            })();
+
+            // ── Customize your messages ────────────────────────────────
+            const firstTimeMessage = `
+            👋 Hey @${context.payload.issue.user.login}, thanks for opening your first issue!
+
+            To help us resolve this quickly, please make sure you've included:
+            - A clear description of the problem or request
+            - Steps to reproduce (if it's a bug)
+            - Your environment details (OS, version, etc.)
+
+            A maintainer will take a look soon. In the meantime, feel free to add more context!
+            `.trim().replace(/^ {12}/gm, '');
+
+            const returningMessage = `
+            👋 Thanks for opening an issue, @${context.payload.issue.user.login}!
+
+            We'll review it shortly. If this is urgent, feel free to tag a maintainer.
+            `.trim().replace(/^ {12}/gm, '');
+            // ──────────────────────────────────────────────────────────
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: isFirstTime ? firstTimeMessage : returningMessage,
+            });
+
+  greet-pr:
+    name: Comment on new PR
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if first-time contributor
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'all',
+            });
+            const userPRs = prs.filter(p => p.user.login === context.payload.pull_request.user.login);
+            core.setOutput('first_time', userPRs.length <= 1 ? 'true' : 'false');
+
+      - name: Post PR welcome comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isFirstTime = '${{ steps.check.outputs.first_time }}' === 'true';
+            const author = context.payload.pull_request.user.login;
+
+            // ── Customize your messages ────────────────────────────────
+            const firstTimeMessage = `
+            🎉 Welcome, @${author} — your first PR! Thanks so much for contributing!
+
+            Here's what happens next:
+            1. Our CI checks will run automatically
+            2. A maintainer will review your changes
+            3. We may request some tweaks before merging
+
+            Please make sure your PR:
+            - [ ] Has a descriptive title
+            - [ ] Includes tests for any new behaviour
+            - [ ] Passes all CI checks
+
+            Thanks again — we really appreciate the contribution! 🙌
+            `.trim().replace(/^ {12}/gm, '');
+
+            const returningMessage = `
+            👋 Thanks for the PR, @${author}! CI is running — we'll review once checks pass.
+            `.trim().replace(/^ {12}/gm, '');
+            // ──────────────────────────────────────────────────────────
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: isFirstTime ? firstTimeMessage : returningMessage,
+            });
